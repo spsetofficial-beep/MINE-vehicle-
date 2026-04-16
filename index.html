@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Smart MineGuard - Vehicle Boundary Tracker</title>
-    <!-- Google Maps API with Places and Geometry libraries -->
+    <!-- Google Maps API - REPLACE YOUR_API_KEY_HERE with actual API key -->
     <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY_HERE&libraries=places,geometry&callback=initMap" async defer></script>
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
@@ -164,6 +164,13 @@
             padding: 6px 14px;
             border-radius: 24px;
         }
+        .api-warning {
+            background: #aa5533;
+            color: white;
+            padding: 8px;
+            text-align: center;
+            font-size: 0.8rem;
+        }
         footer {
             font-size: 0.7rem;
             text-align: center;
@@ -235,25 +242,33 @@
         messagingSenderId: "123456789012",
         appId: "1:123456789012:web:abc123def456"
     };
+    
     // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
-    const vehicleRef = database.ref("/SmartMineGuard");
+    let database;
+    let vehicleRef;
+    
+    try {
+        firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        vehicleRef = database.ref("/SmartMineGuard");
+        console.log("Firebase initialized successfully");
+    } catch (e) {
+        console.error("Firebase init error:", e);
+    }
     
     // ----------------------------- GLOBAL VARIABLES -------------------------------
     let map;
-    let marker;            // Vehicle marker
+    let marker;
     let startMarker, stopMarker;
-    let startPoint = null;   // {lat, lng}
-    let stopPoint = null;    // {lat, lng}
+    let startPoint = null;
+    let stopPoint = null;
     let faultActive = false;
     let currentVehiclePos = { lat: null, lng: null };
-    let polyline;            // Optional path visual
-    let zonePolygon = null;  // not required but can draw corridor
+    let mapInitialized = false;
     
-    const DEFAULT_BUFFER_METERS = 200; // allowed deviation in meters from straight line segment between start and stop
+    const DEFAULT_BUFFER_METERS = 200;
     
-    // Helper: compute distance in meters (Haversine)
+    // Helper: distance in meters
     function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
         const R = 6371000;
         const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -265,21 +280,15 @@
         return R * c;
     }
     
-    // Core function: Check if vehicle position is within allowed corridor defined by Start and Stop points
-    // Logic: Vehicle should be inside a "tube" around the line segment from start to stop.
-    // If no start or stop defined -> no restriction (no fault)
-    // If both defined, compute perpendicular distance to line segment, plus check if projection falls between.
+    // Cross-track distance check
     function isWithinAllowedCorridor(lat, lng, start, stop, bufferMeters = DEFAULT_BUFFER_METERS) {
-        if (!start || !stop) return true;   // boundaries not fully defined -> no fault
+        if (!start || !stop) return true;
         if (!lat || !lng) return true;
         
         const A = { lat: start.lat, lng: start.lng };
         const B = { lat: stop.lat, lng: stop.lng };
         const P = { lat, lng };
         
-        // Convert to meters via approximate cartesian for small distances, but better use cross-track distance formula.
-        // Cross track distance = distance from point to great-circle path
-        // Implementation using spherical geometry:
         const R = 6371000;
         const δ13 = getDistanceFromLatLonInMeters(A.lat, A.lng, P.lat, P.lng) / R;
         const θ13 = Math.atan2(
@@ -295,53 +304,48 @@
         const δxt = Math.asin(Math.sin(δ13) * Math.sin(θ13 - θ12));
         const crossTrackDistance = Math.abs(δxt) * R;
         
-        // Now compute along-track distance to ensure point is between A and B (not beyond endpoints)
         const δ14 = Math.acos(Math.cos(δ13) * Math.cos(δxt));
         const alongTrackDistance = δ14 * R;
         const totalLength = getDistanceFromLatLonInMeters(A.lat, A.lng, B.lat, B.lng);
         
-        // Allow slight extension (5% tolerance) for endpoints
         if (alongTrackDistance < -bufferMeters || alongTrackDistance > totalLength + bufferMeters) {
-            return false;   // outside segment range
+            return false;
         }
         if (crossTrackDistance <= bufferMeters) return true;
         return false;
     }
     
-    // Evaluate fault and update UI + optional log to firebase 'fault_log'
     function evaluateAndUpdateFault(lat, lng) {
         if (lat === null || lng === null) {
             document.getElementById("faultMessage").innerHTML = "⏳ Waiting for GPS data...";
-            document.getElementById("faultPanel").style.background = "#2c1a1a";
             return;
         }
         const within = isWithinAllowedCorridor(lat, lng, startPoint, stopPoint);
         if (!within && startPoint && stopPoint) {
             if (!faultActive) {
                 faultActive = true;
-                // Log fault to Firebase realtime database
-                const faultLogRef = database.ref("/SmartMineGuard/fault_logs");
-                const newFaultRef = faultLogRef.push();
-                newFaultRef.set({
-                    timestamp: new Date().toISOString(),
-                    latitude: lat,
-                    longitude: lng,
-                    start_lat: startPoint.lat,
-                    start_lng: startPoint.lng,
-                    stop_lat: stopPoint.lat,
-                    stop_lng: stopPoint.lng,
-                    message: "VEHICLE OUT OF ALLOCATED CORRIDOR"
-                });
-                // Also update fault status node
-                database.ref("/SmartMineGuard/current_fault").set({
-                    active: true,
-                    since: new Date().toISOString(),
-                    lat: lat,
-                    lng: lng
-                });
+                if (database) {
+                    const faultLogRef = database.ref("/SmartMineGuard/fault_logs");
+                    const newFaultRef = faultLogRef.push();
+                    newFaultRef.set({
+                        timestamp: new Date().toISOString(),
+                        latitude: lat,
+                        longitude: lng,
+                        start_lat: startPoint.lat,
+                        start_lng: startPoint.lng,
+                        stop_lat: stopPoint.lat,
+                        stop_lng: stopPoint.lng,
+                        message: "VEHICLE OUT OF ALLOCATED CORRIDOR"
+                    });
+                    database.ref("/SmartMineGuard/current_fault").set({
+                        active: true,
+                        since: new Date().toISOString(),
+                        lat: lat,
+                        lng: lng
+                    });
+                }
                 document.getElementById("faultMessage").innerHTML = "⚠️ FAULT: Vehicle moved outside allocated route! ⚠️";
                 document.getElementById("faultPanel").style.background = "#aa3333";
-                // Play subtle effect: animate badge
                 const badge = document.getElementById("liveStatusBadge");
                 badge.innerHTML = "🔴 OUT OF ZONE - FAULT";
                 badge.style.background = "#aa2e2e";
@@ -351,10 +355,12 @@
         } else {
             if (faultActive) {
                 faultActive = false;
-                database.ref("/SmartMineGuard/current_fault").set({
-                    active: false,
-                    resolved: new Date().toISOString()
-                });
+                if (database) {
+                    database.ref("/SmartMineGuard/current_fault").set({
+                        active: false,
+                        resolved: new Date().toISOString()
+                    });
+                }
                 document.getElementById("faultMessage").innerHTML = "✅ Vehicle back within allocated zone";
                 document.getElementById("faultPanel").style.background = "#1e5a4a";
                 const badge = document.getElementById("liveStatusBadge");
@@ -367,8 +373,8 @@
         }
     }
     
-    // Update UI from Firebase realtime values
     function fetchVehicleData() {
+        if (!vehicleRef) return;
         vehicleRef.on("value", (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -378,35 +384,30 @@
                 let ir1 = data.ir1;
                 let ir2 = data.ir2;
                 
-                if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
+                if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng) && mapInitialized) {
                     currentVehiclePos = { lat, lng };
                     document.getElementById("liveLat").innerText = lat.toFixed(6);
                     document.getElementById("liveLng").innerText = lng.toFixed(6);
                     document.getElementById("liveLoad").innerText = load;
                     document.getElementById("liveIR").innerText = `${ir1 ?? '?'} / ${ir2 ?? '?'}`;
                     
-                    // Update marker on map
                     if (marker) {
                         marker.setPosition({ lat, lng });
-                    } else {
+                    } else if (map) {
                         marker = new google.maps.Marker({
                             position: { lat, lng },
                             map: map,
                             title: "Mining Vehicle",
                             icon: {
-                                url: "https://maps.google.com/mapfiles/ms/icons/mining-truck.png",
-                                scaledSize: new google.maps.Size(40,40)
+                                url: "https://maps.google.com/mapfiles/ms/icons/yellow-dot.png",
+                                scaledSize: new google.maps.Size(36, 36)
                             }
                         });
                     }
-                    // recenter gently if not manually dragging? we can pan slightly but not force
-                    if (map && !window.userInteracted) {
-                        map.panTo({ lat, lng });
-                    }
                     evaluateAndUpdateFault(lat, lng);
-                } else {
-                    document.getElementById("liveLat").innerText = "---";
-                    document.getElementById("liveLng").innerText = "---";
+                } else if (typeof lat === "number") {
+                    document.getElementById("liveLat").innerText = lat.toFixed(6);
+                    document.getElementById("liveLng").innerText = lng?.toFixed(6) || "---";
                 }
             }
         }, (error) => {
@@ -414,8 +415,8 @@
         });
     }
     
-    // Save user-defined start/stop points to Firebase (so ESP can optionally read)
     function saveBoundaryToFirebase() {
+        if (!database) return;
         const boundaryData = {
             start_point: startPoint ? { lat: startPoint.lat, lng: startPoint.lng } : null,
             stop_point: stopPoint ? { lat: stopPoint.lat, lng: stopPoint.lng } : null,
@@ -423,14 +424,13 @@
             buffer_meters: DEFAULT_BUFFER_METERS
         };
         database.ref("/SmartMineGuard/geofence_boundary").set(boundaryData);
-        // also local display update
         document.getElementById("startCoordDisplay").innerHTML = startPoint ? `${startPoint.lat.toFixed(5)}, ${startPoint.lng.toFixed(5)}` : "Not set";
         document.getElementById("stopCoordDisplay").innerHTML = stopPoint ? `${stopPoint.lat.toFixed(5)}, ${stopPoint.lng.toFixed(5)}` : "Not set";
         updateBoundaryVisuals();
     }
     
     function updateBoundaryVisuals() {
-        // Remove existing markers
+        if (!map) return;
         if (startMarker) startMarker.setMap(null);
         if (stopMarker) stopMarker.setMap(null);
         if (startPoint) {
@@ -438,7 +438,7 @@
                 position: startPoint,
                 map: map,
                 title: "Start Point (Allowed Origin)",
-                icon: { url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png", scaledSize: new google.maps.Size(32,32) }
+                icon: { url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png", scaledSize: new google.maps.Size(32, 32) }
             });
         }
         if (stopPoint) {
@@ -446,12 +446,10 @@
                 position: stopPoint,
                 map: map,
                 title: "Stop Point (Allowed Destination)",
-                icon: { url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png", scaledSize: new google.maps.Size(32,32) }
+                icon: { url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png", scaledSize: new google.maps.Size(32, 32) }
             });
         }
-        // Draw corridor area: a semi-transparent polygon or line + buffer zone visualization (optional)
         if (startPoint && stopPoint) {
-            // draw line between start & stop
             if (window.corridorLine) window.corridorLine.setMap(null);
             const linePoints = [startPoint, stopPoint];
             window.corridorLine = new google.maps.Polyline({
@@ -462,34 +460,29 @@
                 strokeWeight: 4,
                 map: map
             });
-            // Add a visual buffer "fence" using two offset lines? for simplicity, add a circle at each endpoint? not needed
         } else {
             if (window.corridorLine) window.corridorLine.setMap(null);
         }
-        // Also re-evaluate current fault after boundary update
         if (currentVehiclePos.lat && currentVehiclePos.lng) {
             evaluateAndUpdateFault(currentVehiclePos.lat, currentVehiclePos.lng);
         }
     }
     
-    // Google Maps Initialization
     function initMap() {
-        const defaultCenter = { lat: 12.9716, lng: 77.5946 }; // India default
+        const defaultCenter = { lat: 12.9716, lng: 77.5946 };
         map = new google.maps.Map(document.getElementById("map"), {
             center: defaultCenter,
             zoom: 14,
             mapTypeId: google.maps.MapTypeId.HYBRID,
             zoomControl: true,
         });
+        mapInitialized = true;
         
-        // Allow map click to pick start/stop interactively
+        let lastClickedPos = null;
         map.addListener("click", (event) => {
-            // We will not automatically assign; user must click set buttons.
-            // But we can store temp last clicked position, but easier: prompt?
-            // Instead we implement: click on map then press 'Set as Start/Stop' will use last clicked coordinate.
-            window.lastClickedPos = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+            lastClickedPos = { lat: event.latLng.lat(), lng: event.latLng.lng() };
             const info = new google.maps.InfoWindow({
-                content: `<div style="padding:5px;">Clicked location: ${event.latLng.lat().toFixed(5)}, ${event.latLng.lng().toFixed(5)}<br/>Use buttons to set Start/Stop</div>`
+                content: `<div style="padding:5px;">📍 ${event.latLng.lat().toFixed(5)}, ${event.latLng.lng().toFixed(5)}<br/>Use buttons to set Start/Stop</div>`
             });
             info.setPosition(event.latLng);
             info.open(map);
@@ -498,29 +491,28 @@
         
         marker = new google.maps.Marker({ position: defaultCenter, map: map, title: "Waiting for GPS" });
         
-        // Buttons
         document.getElementById("setStartBtn").addEventListener("click", () => {
-            if (window.lastClickedPos) {
-                startPoint = { lat: window.lastClickedPos.lat, lng: window.lastClickedPos.lng };
+            if (lastClickedPos) {
+                startPoint = { lat: lastClickedPos.lat, lng: lastClickedPos.lng };
                 saveBoundaryToFirebase();
-                alert("Start location set! Vehicle must stay within corridor from start to stop.");
+                alert("✅ Start location set! Vehicle must stay within corridor.");
             } else {
-                alert("Click on the map first to pick a location, then click Set Start.");
+                alert("⚠️ Click on the map first to pick a location.");
             }
         });
         document.getElementById("setStopBtn").addEventListener("click", () => {
-            if (window.lastClickedPos) {
-                stopPoint = { lat: window.lastClickedPos.lat, lng: window.lastClickedPos.lng };
+            if (lastClickedPos) {
+                stopPoint = { lat: lastClickedPos.lat, lng: lastClickedPos.lng };
                 saveBoundaryToFirebase();
-                alert("Stop location set! Corridor active.");
+                alert("✅ Stop location set! Corridor active.");
             } else {
-                alert("Click on the map first to pick a location, then click Set Stop.");
+                alert("⚠️ Click on the map first to pick a location.");
             }
         });
         document.getElementById("clearStartBtn").addEventListener("click", () => {
             startPoint = null;
             saveBoundaryToFirebase();
-            alert("Start point cleared. No boundary restriction unless both points defined.");
+            alert("Start point cleared.");
         });
         document.getElementById("clearStopBtn").addEventListener("click", () => {
             stopPoint = null;
@@ -531,35 +523,30 @@
             startPoint = null;
             stopPoint = null;
             saveBoundaryToFirebase();
-            alert("All boundaries reset. Vehicle movement will not trigger fault until new start/stop defined.");
+            alert("All boundaries reset.");
             if (currentVehiclePos.lat) evaluateAndUpdateFault(currentVehiclePos.lat, currentVehiclePos.lng);
         });
         
-        // Load previously stored boundaries from Firebase
-        database.ref("/SmartMineGuard/geofence_boundary").once("value").then((snap) => {
-            const saved = snap.val();
-            if (saved) {
-                if (saved.start_point) startPoint = saved.start_point;
-                if (saved.stop_point) stopPoint = saved.stop_point;
-                saveBoundaryToFirebase(); // update UI and markers
-            }
-        });
+        if (database) {
+            database.ref("/SmartMineGuard/geofence_boundary").once("value").then((snap) => {
+                const saved = snap.val();
+                if (saved) {
+                    if (saved.start_point) startPoint = saved.start_point;
+                    if (saved.stop_point) stopPoint = saved.stop_point;
+                    saveBoundaryToFirebase();
+                }
+            });
+        }
         
-        // Start listening to vehicle data
         fetchVehicleData();
-        
-        // Optional: Pan interaction flag
-        map.addListener("dragstart", () => { window.userInteracted = true; });
-        setTimeout(() => { window.userInteracted = false; }, 100);
     }
     
-    // Expose initMap globally for Google Maps callback
     window.initMap = initMap;
     
-    // manual fallback if Firebase lat/lng not updated yet
-    setInterval(() => {
-        if (currentVehiclePos.lat && currentVehiclePos.lng && startPoint && stopPoint) {
-            evaluateAndUpdateFault(currentVehiclePos.lat, currentVehiclePos.lng);
+    // Fallback if API key is missing
+    setTimeout(() => {
+        if (!mapInitialized) {
+            document.getElementById("map").innerHTML = '<div style="background:#2a1a1a; color:#ffaa66; padding:40px; text-align:center; height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column;"><h3>⚠️ Google Maps API Key Required</h3><p>Please replace <strong>YOUR_API_KEY_HERE</strong> in the script src with a valid Google Maps API key.</p><p>Get one from: <a href="https://console.cloud.google.com/" target="_blank" style="color:#ffaa66;">Google Cloud Console</a></p><p>Enable Maps JavaScript API and Geocoding API.</p></div>';
         }
     }, 3000);
 </script>

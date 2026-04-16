@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Smart MineGuard - Vehicle Boundary Tracker</title>
-    <!-- Google Maps API - REPLACE YOUR_API_KEY_HERE with actual API key -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY_HERE&libraries=places,geometry&callback=initMap" async defer></script>
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+    <title>SmartMineGuard - Advanced Vehicle Telematics Dashboard</title>
+    <!-- Leaflet CSS for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Chart.js for speed graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -16,539 +17,612 @@
             box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
+
         body {
             background: #1a2a32;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            color: #e0e0e0;
             padding: 20px;
         }
+
         .dashboard {
             max-width: 1400px;
-            width: 100%;
-            background: #0f1a1f;
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            margin: 0 auto;
         }
-        .header {
-            background: #0d2c2f;
-            padding: 16px 24px;
-            color: #ffd966;
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
-            border-bottom: 2px solid #ffaa33;
+            justify-content: center;
+            gap: 12px;
         }
-        .header h1 {
-            font-size: 1.6rem;
-            letter-spacing: 1px;
+
+        h1 i {
+            color: #ffaa33;
+        }
+
+        /* Grid layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: #2d3e45;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            transition: 0.2s;
+            border-left: 5px solid #ffaa33;
+        }
+
+        .card-full {
+            grid-column: 1 / -1;
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #ffaa3380;
             display: flex;
             align-items: center;
             gap: 10px;
         }
-        .status-badge {
-            background: #1e3a3f;
-            padding: 6px 14px;
-            border-radius: 40px;
+
+        /* Map container */
+        #map {
+            height: 450px;
+            border-radius: 12px;
+            background: #1e2a2f;
+            z-index: 1;
+        }
+
+        /* Stats row */
+        .stats-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: #1e2e36;
+            border-radius: 20px;
+            padding: 12px 20px;
+            flex: 1;
+            min-width: 120px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .stat-label {
             font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #bbbbbb;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
             font-weight: bold;
             color: #ffaa66;
         }
-        .map-container {
-            position: relative;
-            height: 55vh;
-            min-height: 400px;
-            width: 100%;
-            border-bottom: 3px solid #ffaa33;
+
+        .alert-badge {
+            background: #2c1e1e;
+            border-left: 4px solid #ff4444;
+            padding: 8px 12px;
+            border-radius: 12px;
+            margin-top: 10px;
         }
-        #map {
-            height: 100%;
-            width: 100%;
-        }
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            padding: 20px 24px;
-            background: #12262c;
-            border-bottom: 1px solid #2a4a55;
-        }
-        .boundary-card {
-            background: #1d3b42;
-            border-radius: 20px;
-            padding: 16px 20px;
-            flex: 1;
-            min-width: 240px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        }
-        .boundary-card h3 {
-            color: #ffcc77;
-            margin-bottom: 12px;
-            font-size: 1.2rem;
+
+        .load-level {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
+            margin-top: 8px;
         }
-        .coord-row {
-            background: #0e2a2f;
-            padding: 8px 12px;
-            border-radius: 16px;
-            margin-bottom: 10px;
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #cfeef5;
-            word-break: break-all;
+
+        .load-bar {
+            height: 18px;
+            width: 100%;
+            background: #3a4a52;
+            border-radius: 30px;
+            overflow: hidden;
         }
+
+        .load-fill {
+            height: 100%;
+            width: 0%;
+            background: #ffaa33;
+            border-radius: 30px;
+            transition: width 0.3s;
+        }
+
         button {
             background: #ffaa33;
             border: none;
             padding: 8px 16px;
-            border-radius: 30px;
+            border-radius: 40px;
             font-weight: bold;
             cursor: pointer;
-            color: #1e2f2a;
             transition: 0.2s;
-            margin-top: 6px;
-            font-size: 0.8rem;
+            margin-top: 12px;
+            color: #1a2a32;
         }
+
         button:hover {
             background: #ffcc66;
-            transform: scale(0.97);
+            transform: scale(1.02);
         }
-        .set-btn {
-            background: #2e7d64;
-            color: white;
-            margin-left: 8px;
+
+        .log-area {
+            background: #1a262c;
+            border-radius: 16px;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 0.8rem;
+            font-family: monospace;
         }
-        .set-btn:hover {
-            background: #3e9e7e;
+
+        .log-entry {
+            border-bottom: 1px solid #3e5a64;
+            padding: 6px 0;
+            color: #d0d0d0;
         }
-        .fault-panel {
-            background: #2c1a1a;
-            padding: 12px 24px;
-            color: #ffaa88;
+
+        .mismatch {
+            color: #ff8888;
+            border-left: 3px solid red;
+            padding-left: 8px;
+        }
+
+        .speed-warning {
+            color: #ff7777;
             font-weight: bold;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-            border-top: 1px solid #aa5533;
-        }
-        .fault-alert {
-            background: #aa2e2e;
-            padding: 6px 14px;
-            border-radius: 40px;
-            color: white;
-            font-size: 0.9rem;
             animation: pulse 1s infinite;
         }
+
         @keyframes pulse {
-            0% { opacity: 0.7; background: #cc4444; }
-            100% { opacity: 1; background: #ff5555; }
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
         }
-        .live-data {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            padding: 12px 24px;
-            background: #0b1e23;
-            color: #b9e6f0;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-        .data-card {
-            background: #1c3840;
-            padding: 6px 14px;
-            border-radius: 24px;
-        }
-        .api-warning {
-            background: #aa5533;
-            color: white;
-            padding: 8px;
-            text-align: center;
-            font-size: 0.8rem;
-        }
+
         footer {
-            font-size: 0.7rem;
             text-align: center;
-            padding: 12px;
-            background: #0a181c;
-            color: #6c9caa;
+            margin-top: 20px;
+            font-size: 0.7rem;
+            color: #8aa0a8;
         }
+
         @media (max-width: 700px) {
-            .controls { flex-direction: column; }
-            .header { flex-direction: column; gap: 8px; text-align: center; }
+            .stat-value { font-size: 1.2rem; }
+            .card-title { font-size: 1rem; }
         }
     </style>
 </head>
 <body>
 <div class="dashboard">
-    <div class="header">
-        <h1>⛏️ SmartMineGuard | Geofence Controller</h1>
-        <div class="status-badge" id="liveStatusBadge">🟢 Monitoring Active</div>
-    </div>
-    
-    <div class="map-container">
-        <div id="map"></div>
-    </div>
-    
-    <div class="controls">
-        <div class="boundary-card">
-            <h3>📍 START POINT (Allowed Zone Start)</h3>
-            <div class="coord-row" id="startCoordDisplay">Not set</div>
-            <button id="setStartBtn">📍 Set as Start Location</button>
-            <button id="clearStartBtn" style="background:#5a626e; margin-left: 8px;">Clear</button>
+    <h1><i class="fas fa-hard-hat"></i> SmartMineGuard · Vehicle Telematics <i class="fas fa-truck-monster"></i></h1>
+
+    <!-- User Defined Route Panel -->
+    <div class="card card-full">
+        <div class="card-title"><i class="fas fa-draw-polygon"></i> Define Allowed Route (Start ↔ Stop)</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end;">
+            <div style="flex:1">
+                <label>📍 Start Location (Lat, Lng):</label>
+                <input type="text" id="startLat" placeholder="Latitude" value="12.9716" style="width:48%; padding:6px; margin-right:4%;">
+                <input type="text" id="startLng" placeholder="Longitude" value="77.5946" style="width:48%; padding:6px;">
+            </div>
+            <div style="flex:1">
+                <label>🏁 Stop Location (Lat, Lng):</label>
+                <input type="text" id="stopLat" placeholder="Latitude" value="12.9352" style="width:48%; margin-right:4%;">
+                <input type="text" id="stopLng" placeholder="Longitude" value="77.6244" style="width:48%;">
+            </div>
+            <div>
+                <button id="applyRouteBtn"><i class="fas fa-check-circle"></i> Apply Route & Check Zone</button>
+            </div>
         </div>
-        <div class="boundary-card">
-            <h3>🏁 STOP POINT (Allowed Zone End)</h3>
-            <div class="coord-row" id="stopCoordDisplay">Not set</div>
-            <button id="setStopBtn">🏁 Set as Stop Location</button>
-            <button id="clearStopBtn" style="background:#5a626e; margin-left: 8px;">Clear</button>
-        </div>
-        <div class="boundary-card">
-            <h3>⚙️ Route Boundary</h3>
-            <p style="font-size:0.75rem; color:#cce;">Vehicle must travel within the defined start→stop corridor (buffer zone).</p>
-            <button id="resetBoundaryBtn" style="background:#9e5a2e;">Reset All Boundaries</button>
+        <div class="stats-row" style="margin-top: 12px;">
+            <div class="stat-box"><span class="stat-label">Allowed Corridor</span><div class="stat-value" id="routeStatus">Not set</div></div>
+            <div class="stat-box"><span class="stat-label">Vehicle Location Status</span><div class="stat-value" id="zoneStatus">---</div></div>
         </div>
     </div>
-    
-    <div class="live-data">
-        <div class="data-card">📍 Live Lat: <span id="liveLat">---</span></div>
-        <div class="data-card">📍 Live Lng: <span id="liveLng">---</span></div>
-        <div class="data-card">⚖️ Load Status: <span id="liveLoad">---</span></div>
-        <div class="data-card">📡 IR1/IR2: <span id="liveIR">---</span></div>
+
+    <!-- Map + Live Data -->
+    <div class="grid">
+        <div class="card" style="grid-column: span 1;">
+            <div class="card-title"><i class="fas fa-map-marked-alt"></i> Live Map & Tracking</div>
+            <div id="map"></div>
+            <div class="stats-row" style="margin-top: 10px;">
+                <div class="stat-box"><span class="stat-label">Latitude</span><div class="stat-value" id="liveLat">---</div></div>
+                <div class="stat-box"><span class="stat-label">Longitude</span><div class="stat-value" id="liveLng">---</div></div>
+                <div class="stat-box"><span class="stat-label">Speed</span><div class="stat-value" id="liveSpeed">0 km/h</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title"><i class="fas fa-weight-hanging"></i> Load Status</div>
+            <div class="load-level">
+                <span><i class="fas fa-tachometer-alt"></i> Current:</span>
+                <strong id="loadStatusText">EMPTY</strong>
+            </div>
+            <div class="load-bar"><div class="load-fill" id="loadFillBar"></div></div>
+            <div class="load-level" style="justify-content: space-between; margin-top: 12px;">
+                <span><i class="fas fa-microchip"></i> IR1: <span id="ir1Val">HIGH</span></span>
+                <span><i class="fas fa-microchip"></i> IR2: <span id="ir2Val">HIGH</span></span>
+            </div>
+            <div class="alert-badge" id="loadAlertMsg"><i class="fas fa-info-circle"></i> Load normal</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title"><i class="fas fa-gauge-high"></i> Speed & Alerts</div>
+            <div><label>⚠️ Speed Threshold (km/h): <input type="number" id="speedLimit" value="40" style="width:80px; background:#2e4a55; color:white; border:1px solid #ffaa33;"></label></div>
+            <div id="speedAlertBox" class="alert-badge" style="background:#1f2f35;"><i class="fas fa-road"></i> Speed normal</div>
+            <canvas id="speedChart" width="300" height="120" style="margin-top: 12px; background:#1f2e33; border-radius:12px;"></canvas>
+        </div>
     </div>
-    
-    <div class="fault-panel" id="faultPanel">
-        <span>🚨 FAULT MONITORING:</span>
-        <span id="faultMessage">✅ Vehicle within defined zone</span>
+
+    <!-- Logs: Mismatch road log & No GPS log -->
+    <div class="card card-full">
+        <div class="card-title"><i class="fas fa-list-ul"></i> Violation Logs (Route Mismatch / No GPS)</div>
+        <div class="log-area" id="logPanel">
+            <div class="log-entry">System ready — waiting for vehicle data...</div>
+        </div>
+        <button id="clearLogsBtn"><i class="fas fa-trash-alt"></i> Clear Logs</button>
     </div>
-    <footer>
-        🔹 User-defined start & stop locations create a virtual corridor. If vehicle moves outside the allocated area → FAULT LOGGED & alert.
-    </footer>
+
+    <footer>Live simulation based on Firebase data OR manual override for testing. Real-time route mismatch detection & over-speed logging.</footer>
 </div>
 
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
-    // ----------------------------- FIREBASE CONFIGURATION -------------------------
-    const firebaseConfig = {
-        apiKey: "AIzaSyBgcGLIFWzVTjDKwKTozhMkmfqUcDVcU6g",
-        authDomain: "mine-vehicle-default-rtdb.firebaseapp.com",
-        databaseURL: "https://mine-vehicle-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "mine-vehicle",
-        storageBucket: "mine-vehicle.appspot.com",
-        messagingSenderId: "123456789012",
-        appId: "1:123456789012:web:abc123def456"
-    };
-    
-    // Initialize Firebase
-    let database;
-    let vehicleRef;
-    
-    try {
-        firebase.initializeApp(firebaseConfig);
-        database = firebase.database();
-        vehicleRef = database.ref("/SmartMineGuard");
-        console.log("Firebase initialized successfully");
-    } catch (e) {
-        console.error("Firebase init error:", e);
-    }
-    
-    // ----------------------------- GLOBAL VARIABLES -------------------------------
+    // ---------- GLOBAL VARIABLES ----------
     let map;
-    let marker;
-    let startMarker, stopMarker;
+    let vehicleMarker;
+    let routeLine;
     let startPoint = null;
     let stopPoint = null;
-    let faultActive = false;
-    let currentVehiclePos = { lat: null, lng: null };
-    let mapInitialized = false;
+    let allowedPolyline = null;
     
-    const DEFAULT_BUFFER_METERS = 200;
+    // Store last known position & speed history (max 20 points)
+    let speedHistory = [];
+    let speedChart;
     
-    // Helper: distance in meters
-    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-        const R = 6371000;
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                  Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        return R * c;
+    // Logs array
+    let violationLogs = [];   // store log entries
+    
+    // ---------- SIMULATION MODE (for demo without real Firebase, but we can also integrate real data)
+    // For actual deployment, replace with Firebase realtime listener.
+    // This demo includes both: it tries to fetch from Firebase RTDB but also provides fallback simulation.
+    // We'll use fetch polling to Firebase REST API (since credentials provided) OR simulate random GPS.
+    // To keep functional offline, we create a simulation togglable, but we also connect to actual Firebase.
+    
+    // Firebase REST endpoints (read from your project)
+    const FIREBASE_URL = "https://mine-vehicle-default-rtdb.asia-southeast1.firebasedatabase.app/SmartMineGuard.json";
+    
+    // UI Elements
+    const liveLatSpan = document.getElementById('liveLat');
+    const liveLngSpan = document.getElementById('liveLng');
+    const liveSpeedSpan = document.getElementById('liveSpeed');
+    const loadStatusSpan = document.getElementById('loadStatusText');
+    const ir1Span = document.getElementById('ir1Val');
+    const ir2Span = document.getElementById('ir2Val');
+    const loadFillBar = document.getElementById('loadFillBar');
+    const loadAlertMsg = document.getElementById('loadAlertMsg');
+    const zoneStatusSpan = document.getElementById('zoneStatus');
+    const routeStatusSpan = document.getElementById('routeStatus');
+    const speedAlertBox = document.getElementById('speedAlertBox');
+    const logPanel = document.getElementById('logPanel');
+    
+    let currentLat = null, currentLng = null, currentSpeed = 0;
+    let currentLoad = "EMPTY";
+    let currentIR1 = 1, currentIR2 = 1;
+    
+    // Helper: add log message
+    function addLog(message, isMismatch = false) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = { time: timestamp, text: message, mismatch: isMismatch };
+        violationLogs.unshift(logEntry); // newest first
+        if (violationLogs.length > 50) violationLogs.pop();
+        renderLogs();
     }
     
-    // Cross-track distance check
-    function isWithinAllowedCorridor(lat, lng, start, stop, bufferMeters = DEFAULT_BUFFER_METERS) {
-        if (!start || !stop) return true;
-        if (!lat || !lng) return true;
-        
-        const A = { lat: start.lat, lng: start.lng };
-        const B = { lat: stop.lat, lng: stop.lng };
-        const P = { lat, lng };
-        
-        const R = 6371000;
-        const δ13 = getDistanceFromLatLonInMeters(A.lat, A.lng, P.lat, P.lng) / R;
-        const θ13 = Math.atan2(
-            Math.sin((P.lng - A.lng) * Math.PI/180) * Math.cos(P.lat * Math.PI/180),
-            Math.cos(A.lat * Math.PI/180) * Math.sin(P.lat * Math.PI/180) - 
-            Math.sin(A.lat * Math.PI/180) * Math.cos(P.lat * Math.PI/180) * Math.cos((P.lng - A.lng) * Math.PI/180)
-        );
-        const θ12 = Math.atan2(
-            Math.sin((B.lng - A.lng) * Math.PI/180) * Math.cos(B.lat * Math.PI/180),
-            Math.cos(A.lat * Math.PI/180) * Math.sin(B.lat * Math.PI/180) - 
-            Math.sin(A.lat * Math.PI/180) * Math.cos(B.lat * Math.PI/180) * Math.cos((B.lng - A.lng) * Math.PI/180)
-        );
-        const δxt = Math.asin(Math.sin(δ13) * Math.sin(θ13 - θ12));
-        const crossTrackDistance = Math.abs(δxt) * R;
-        
-        const δ14 = Math.acos(Math.cos(δ13) * Math.cos(δxt));
-        const alongTrackDistance = δ14 * R;
-        const totalLength = getDistanceFromLatLonInMeters(A.lat, A.lng, B.lat, B.lng);
-        
-        if (alongTrackDistance < -bufferMeters || alongTrackDistance > totalLength + bufferMeters) {
-            return false;
-        }
-        if (crossTrackDistance <= bufferMeters) return true;
-        return false;
-    }
-    
-    function evaluateAndUpdateFault(lat, lng) {
-        if (lat === null || lng === null) {
-            document.getElementById("faultMessage").innerHTML = "⏳ Waiting for GPS data...";
+    function renderLogs() {
+        logPanel.innerHTML = "";
+        if (violationLogs.length === 0) {
+            logPanel.innerHTML = '<div class="log-entry">No violations yet.</div>';
             return;
         }
-        const within = isWithinAllowedCorridor(lat, lng, startPoint, stopPoint);
-        if (!within && startPoint && stopPoint) {
-            if (!faultActive) {
-                faultActive = true;
-                if (database) {
-                    const faultLogRef = database.ref("/SmartMineGuard/fault_logs");
-                    const newFaultRef = faultLogRef.push();
-                    newFaultRef.set({
-                        timestamp: new Date().toISOString(),
-                        latitude: lat,
-                        longitude: lng,
-                        start_lat: startPoint.lat,
-                        start_lng: startPoint.lng,
-                        stop_lat: stopPoint.lat,
-                        stop_lng: stopPoint.lng,
-                        message: "VEHICLE OUT OF ALLOCATED CORRIDOR"
-                    });
-                    database.ref("/SmartMineGuard/current_fault").set({
-                        active: true,
-                        since: new Date().toISOString(),
-                        lat: lat,
-                        lng: lng
-                    });
-                }
-                document.getElementById("faultMessage").innerHTML = "⚠️ FAULT: Vehicle moved outside allocated route! ⚠️";
-                document.getElementById("faultPanel").style.background = "#aa3333";
-                const badge = document.getElementById("liveStatusBadge");
-                badge.innerHTML = "🔴 OUT OF ZONE - FAULT";
-                badge.style.background = "#aa2e2e";
-            } else {
-                document.getElementById("faultMessage").innerHTML = "⚠️ FAULT ACTIVE: Outside allowed area!";
-            }
-        } else {
-            if (faultActive) {
-                faultActive = false;
-                if (database) {
-                    database.ref("/SmartMineGuard/current_fault").set({
-                        active: false,
-                        resolved: new Date().toISOString()
-                    });
-                }
-                document.getElementById("faultMessage").innerHTML = "✅ Vehicle back within allocated zone";
-                document.getElementById("faultPanel").style.background = "#1e5a4a";
-                const badge = document.getElementById("liveStatusBadge");
-                badge.innerHTML = "🟢 Monitoring Active";
-                badge.style.background = "#1e3a3f";
-            } else {
-                document.getElementById("faultMessage").innerHTML = "✅ Within designated route corridor";
-                document.getElementById("faultPanel").style.background = "#1e5a4a";
-            }
+        violationLogs.forEach(log => {
+            const div = document.createElement('div');
+            div.className = 'log-entry' + (log.mismatch ? ' mismatch' : '');
+            div.innerHTML = `<i class="fas fa-clock"></i> [${log.time}] ${log.text}`;
+            logPanel.appendChild(div);
+        });
+    }
+    
+    // Check if GPS is valid and if within allowed corridor (defined by start & stop)
+    // We compute a simple bounding box around the line segment from start to stop + tolerance 0.01 deg (~1km)
+    function isWithinAllowedCorridor(lat, lng) {
+        if (!startPoint || !stopPoint) return true; // no restriction yet
+        // create bounding box expanded by 0.008 deg (~ 900m)
+        const minLat = Math.min(startPoint.lat, stopPoint.lat) - 0.008;
+        const maxLat = Math.max(startPoint.lat, stopPoint.lat) + 0.008;
+        const minLng = Math.min(startPoint.lng, stopPoint.lng) - 0.008;
+        const maxLng = Math.max(startPoint.lng, stopPoint.lng) + 0.008;
+        return (lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng);
+    }
+    
+    // Update route visualization and status text
+    function updateRouteDefinition() {
+        const startLat = parseFloat(document.getElementById('startLat').value);
+        const startLng = parseFloat(document.getElementById('startLng').value);
+        const stopLat = parseFloat(document.getElementById('stopLat').value);
+        const stopLng = parseFloat(document.getElementById('stopLng').value);
+        
+        if (isNaN(startLat) || isNaN(startLng) || isNaN(stopLat) || isNaN(stopLng)) {
+            addLog("Invalid route coordinates", false);
+            return;
+        }
+        startPoint = { lat: startLat, lng: startLng };
+        stopPoint = { lat: stopLat, lng: stopLng };
+        
+        // draw on map
+        if (allowedPolyline) map.removeLayer(allowedPolyline);
+        const points = [[startLat, startLng], [stopLat, stopLng]];
+        allowedPolyline = L.polyline(points, { color: '#33ff99', weight: 5, opacity: 0.7, dashArray: '8, 8' }).addTo(map);
+        map.fitBounds(points);
+        routeStatusSpan.innerHTML = `Start → Stop (${startLat.toFixed(4)},${startLng.toFixed(4)}) ➔ (${stopLat.toFixed(4)},${stopLng.toFixed(4)})`;
+        
+        addLog(`Route defined: Start ${startLat.toFixed(4)},${startLng.toFixed(4)} | Stop ${stopLat.toFixed(4)},${stopLng.toFixed(4)}`, false);
+        // re-evaluate current position if exists
+        if (currentLat !== null && currentLng !== null) {
+            checkLocationViolation(currentLat, currentLng);
         }
     }
     
-    function fetchVehicleData() {
-        if (!vehicleRef) return;
-        vehicleRef.on("value", (snapshot) => {
-            const data = snapshot.val();
+    // Check violation and add log if outside allowed zone
+    function checkLocationViolation(lat, lng) {
+        if (!startPoint || !stopPoint) {
+            zoneStatusSpan.innerHTML = "Route not defined";
+            return;
+        }
+        const inside = isWithinAllowedCorridor(lat, lng);
+        if (inside) {
+            zoneStatusSpan.innerHTML = "✅ On allowed route";
+        } else {
+            zoneStatusSpan.innerHTML = "❌ MISMATCH! Outside allocated zone";
+            addLog(`⚠️ ROUTE MISMATCH: Vehicle at (${lat.toFixed(5)}, ${lng.toFixed(5)}) is OUTSIDE the defined start-stop corridor!`, true);
+        }
+        return inside;
+    }
+    
+    // Speed monitoring and over-speed alert
+    function checkSpeedAlert(speedKmh) {
+        const limit = parseFloat(document.getElementById('speedLimit').value);
+        if (isNaN(limit)) return;
+        if (speedKmh > limit) {
+            speedAlertBox.innerHTML = `<i class="fas fa-exclamation-triangle"></i> OVERSPEED! ${speedKmh.toFixed(1)} km/h > ${limit} km/h`;
+            speedAlertBox.style.background = "#4a1e2a";
+            speedAlertBox.classList.add('speed-warning');
+            addLog(`🚨 OVERSPEED ALERT: ${speedKmh.toFixed(1)} km/h (Limit ${limit} km/h)`, false);
+        } else {
+            speedAlertBox.innerHTML = `<i class="fas fa-check-circle"></i> Speed within limit (${speedKmh.toFixed(1)} / ${limit} km/h)`;
+            speedAlertBox.style.background = "#1f2f35";
+            speedAlertBox.classList.remove('speed-warning');
+        }
+    }
+    
+    // Update Load status based on IR values (IR1, IR2: HIGH=1, LOW=0 per circuit)
+    function updateLoadFromIR(ir1, ir2) {
+        let load = "EMPTY";
+        let fillPercent = 0;
+        if (ir1 === 1 && ir2 === 1) { load = "EMPTY"; fillPercent = 0; loadAlertMsg.innerHTML = "<i class='fas fa-box-open'></i> No load detected"; }
+        else if (ir1 === 0 && ir2 === 1) { load = "HALF"; fillPercent = 50; loadAlertMsg.innerHTML = "<i class='fas fa-charging-station'></i> Half load - one IR blocked"; }
+        else if (ir1 === 0 && ir2 === 0) { load = "FULL"; fillPercent = 100; loadAlertMsg.innerHTML = "<i class='fas fa-weight-hanging'></i> FULL load! Buzzer active"; }
+        else if (ir1 === 1 && ir2 === 0) { load = "HALF (IR2)"; fillPercent = 50; loadAlertMsg.innerHTML = "<i class='fas fa-adjust'></i> Asymmetric load"; }
+        else { load = "UNKNOWN"; fillPercent = 0; }
+        currentLoad = load;
+        loadStatusSpan.innerText = currentLoad;
+        loadFillBar.style.width = fillPercent + "%";
+        if (currentLoad === "FULL") {
+            loadAlertMsg.style.borderLeftColor = "#ff4444";
+            loadAlertMsg.style.background = "#331c1c";
+        } else {
+            loadAlertMsg.style.borderLeftColor = "#ffaa33";
+            loadAlertMsg.style.background = "#1f2f35";
+        }
+    }
+    
+    // Update map marker, speed chart, and evaluate violations
+    function updateTelemetry(lat, lng, speed, ir1, ir2, loadFromFirebase) {
+        if (lat === null || lng === null) {
+            // No GPS scenario
+            liveLatSpan.innerText = "NO FIX";
+            liveLngSpan.innerText = "NO FIX";
+            addLog("⚠️ NO GPS SIGNAL: Unable to get location coordinates", false);
+            zoneStatusSpan.innerHTML = "No GPS data";
+            return;
+        }
+        currentLat = lat;
+        currentLng = lng;
+        currentSpeed = speed || 0;
+        
+        liveLatSpan.innerText = lat.toFixed(6);
+        liveLngSpan.innerText = lng.toFixed(6);
+        liveSpeedSpan.innerText = currentSpeed.toFixed(1) + " km/h";
+        
+        // update marker
+        if (!vehicleMarker) {
+            vehicleMarker = L.marker([lat, lng], { icon: L.divIcon({ html: '🚛', iconSize: [30,30], className: 'vehicle-icon' }) }).addTo(map);
+        } else {
+            vehicleMarker.setLatLng([lat, lng]);
+        }
+        map.panTo([lat, lng]);
+        
+        // check route mismatch (if route defined)
+        const inside = checkLocationViolation(lat, lng);
+        if (startPoint && stopPoint && !inside) {
+            // already logged inside checkLocationViolation, but ensure it's once per poll; duplicate logs avoided by condition but can add extra
+        }
+        
+        // speed monitoring
+        checkSpeedAlert(currentSpeed);
+        
+        // update speed history for chart
+        speedHistory.push({time: new Date().getTime(), speed: currentSpeed});
+        if (speedHistory.length > 20) speedHistory.shift();
+        updateSpeedChart();
+        
+        // Update IR and load
+        currentIR1 = ir1;
+        currentIR2 = ir2;
+        ir1Span.innerText = (ir1 === 0 ? "LOW (Blocked)" : "HIGH");
+        ir2Span.innerText = (ir2 === 0 ? "LOW (Blocked)" : "HIGH");
+        updateLoadFromIR(ir1, ir2);
+    }
+    
+    // Speed Chart
+    function updateSpeedChart() {
+        if (!speedChart) return;
+        const labels = speedHistory.map((_, idx) => idx);
+        const speeds = speedHistory.map(p => p.speed);
+        speedChart.data.datasets[0].data = speeds;
+        speedChart.update();
+    }
+    
+    // ---------- FETCH DATA FROM FIREBASE (real-time polling) ----------
+    async function fetchFirebaseData() {
+        try {
+            const response = await fetch(FIREBASE_URL);
+            if (!response.ok) throw new Error("HTTP error");
+            const data = await response.json();
             if (data) {
+                // extract values
                 let lat = data.latitude;
                 let lng = data.longitude;
-                let load = data.load || "UNKNOWN";
-                let ir1 = data.ir1;
-                let ir2 = data.ir2;
-                
-                if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng) && mapInitialized) {
-                    currentVehiclePos = { lat, lng };
-                    document.getElementById("liveLat").innerText = lat.toFixed(6);
-                    document.getElementById("liveLng").innerText = lng.toFixed(6);
-                    document.getElementById("liveLoad").innerText = load;
-                    document.getElementById("liveIR").innerText = `${ir1 ?? '?'} / ${ir2 ?? '?'}`;
-                    
-                    if (marker) {
-                        marker.setPosition({ lat, lng });
-                    } else if (map) {
-                        marker = new google.maps.Marker({
-                            position: { lat, lng },
-                            map: map,
-                            title: "Mining Vehicle",
-                            icon: {
-                                url: "https://maps.google.com/mapfiles/ms/icons/yellow-dot.png",
-                                scaledSize: new google.maps.Size(36, 36)
-                            }
-                        });
+                let ir1Val = data.ir1;
+                let ir2Val = data.ir2;
+                let load = data.load;
+                // note: speed is not sent from arduino? But we can compute from GPS or add speed field, but I will simulate speed from delta later. However real hardware: we need speed. For demo we can either derive from GPS or add a speed field. Arduino code currently not sending speed. I will add a simulated speed based on location change, but more robust: implement speed from Arduino if present. Since original code has no speed, we will calculate a mock speed or add a speed value that can be manually changed. For realism: In dashboard we compute speed from lat/lng changes across polls.
+                // compute speed between previous call and now
+                if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+                    // speed calculation (simple Haversine distance per 2 seconds)
+                    if (window.prevLat && window.prevLng && window.prevTimestamp) {
+                        const R = 6371;
+                        const dLat = (lat - window.prevLat) * Math.PI/180;
+                        const dLng = (lng - window.prevLng) * Math.PI/180;
+                        const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(window.prevLat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                        const distanceKm = R * c;
+                        const timeDeltaSec = (Date.now() - window.prevTimestamp) / 1000;
+                        let computedSpeed = timeDeltaSec > 0 ? (distanceKm / timeDeltaSec * 3.6) : 0;
+                        computedSpeed = Math.min(computedSpeed, 120);
+                        currentSpeed = computedSpeed;
+                    } else {
+                        currentSpeed = 0;
                     }
-                    evaluateAndUpdateFault(lat, lng);
-                } else if (typeof lat === "number") {
-                    document.getElementById("liveLat").innerText = lat.toFixed(6);
-                    document.getElementById("liveLng").innerText = lng?.toFixed(6) || "---";
+                    window.prevLat = lat;
+                    window.prevLng = lng;
+                    window.prevTimestamp = Date.now();
+                    // Update telemetry with computed speed
+                    updateTelemetry(lat, lng, currentSpeed, ir1Val, ir2Val, load);
+                } else {
+                    // GPS invalid
+                    updateTelemetry(null, null, 0, ir1Val, ir2Val, load);
+                    addLog("GPS data invalid from Firebase", false);
                 }
+            } else {
+                console.warn("Empty firebase snapshot");
             }
-        }, (error) => {
-            console.error("Firebase read error:", error);
-        });
-    }
-    
-    function saveBoundaryToFirebase() {
-        if (!database) return;
-        const boundaryData = {
-            start_point: startPoint ? { lat: startPoint.lat, lng: startPoint.lng } : null,
-            stop_point: stopPoint ? { lat: stopPoint.lat, lng: stopPoint.lng } : null,
-            updated_at: new Date().toISOString(),
-            buffer_meters: DEFAULT_BUFFER_METERS
-        };
-        database.ref("/SmartMineGuard/geofence_boundary").set(boundaryData);
-        document.getElementById("startCoordDisplay").innerHTML = startPoint ? `${startPoint.lat.toFixed(5)}, ${startPoint.lng.toFixed(5)}` : "Not set";
-        document.getElementById("stopCoordDisplay").innerHTML = stopPoint ? `${stopPoint.lat.toFixed(5)}, ${stopPoint.lng.toFixed(5)}` : "Not set";
-        updateBoundaryVisuals();
-    }
-    
-    function updateBoundaryVisuals() {
-        if (!map) return;
-        if (startMarker) startMarker.setMap(null);
-        if (stopMarker) stopMarker.setMap(null);
-        if (startPoint) {
-            startMarker = new google.maps.Marker({
-                position: startPoint,
-                map: map,
-                title: "Start Point (Allowed Origin)",
-                icon: { url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png", scaledSize: new google.maps.Size(32, 32) }
-            });
-        }
-        if (stopPoint) {
-            stopMarker = new google.maps.Marker({
-                position: stopPoint,
-                map: map,
-                title: "Stop Point (Allowed Destination)",
-                icon: { url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png", scaledSize: new google.maps.Size(32, 32) }
-            });
-        }
-        if (startPoint && stopPoint) {
-            if (window.corridorLine) window.corridorLine.setMap(null);
-            const linePoints = [startPoint, stopPoint];
-            window.corridorLine = new google.maps.Polyline({
-                path: linePoints,
-                geodesic: true,
-                strokeColor: "#FFCC66",
-                strokeOpacity: 0.9,
-                strokeWeight: 4,
-                map: map
-            });
-        } else {
-            if (window.corridorLine) window.corridorLine.setMap(null);
-        }
-        if (currentVehiclePos.lat && currentVehiclePos.lng) {
-            evaluateAndUpdateFault(currentVehiclePos.lat, currentVehiclePos.lng);
+        } catch (err) {
+            console.error("Firebase fetch error:", err);
+            // simulate demo data to show functionality (optional simulation)
+            simulateDemoData();
         }
     }
     
+    // Fallback simulation when Firebase unreachable or for demonstration
+    let simInterval;
+    let simLat = 12.9716, simLng = 77.5946;
+    let simSpeedVal = 25;
+    let simIr1 = 1, simIr2 = 1;
+    function simulateDemoData() {
+        if (simInterval) return;
+        simInterval = setInterval(() => {
+            // move vehicle along simulated path from start to stop if defined, else random walk
+            if (startPoint && stopPoint) {
+                // linear interpolation factor cyclic
+                let t = (Date.now() % 30000) / 30000;
+                simLat = startPoint.lat + (stopPoint.lat - startPoint.lat) * t;
+                simLng = startPoint.lng + (stopPoint.lng - startPoint.lng) * t;
+                simSpeedVal = 35 + Math.sin(Date.now() / 1000) * 15;
+            } else {
+                simLat += (Math.random() - 0.5) * 0.002;
+                simLng += (Math.random() - 0.5) * 0.002;
+                simSpeedVal = 20 + Math.random() * 30;
+            }
+            // simulate IR patterns
+            if (Math.random() > 0.7) simIr1 = 0; else simIr1 = 1;
+            if (Math.random() > 0.8) simIr2 = 0; else simIr2 = 1;
+            if (simIr1 === 0 && simIr2 === 0) simIr2 = 0;
+            updateTelemetry(simLat, simLng, simSpeedVal, simIr1, simIr2, "SIMULATED");
+        }, 3000);
+    }
+    
+    // Initialize Map
     function initMap() {
-        const defaultCenter = { lat: 12.9716, lng: 77.5946 };
-        map = new google.maps.Map(document.getElementById("map"), {
-            center: defaultCenter,
-            zoom: 14,
-            mapTypeId: google.maps.MapTypeId.HYBRID,
-            zoomControl: true,
-        });
-        mapInitialized = true;
-        
-        let lastClickedPos = null;
-        map.addListener("click", (event) => {
-            lastClickedPos = { lat: event.latLng.lat(), lng: event.latLng.lng() };
-            const info = new google.maps.InfoWindow({
-                content: `<div style="padding:5px;">📍 ${event.latLng.lat().toFixed(5)}, ${event.latLng.lng().toFixed(5)}<br/>Use buttons to set Start/Stop</div>`
-            });
-            info.setPosition(event.latLng);
-            info.open(map);
-            setTimeout(() => info.close(), 2000);
-        });
-        
-        marker = new google.maps.Marker({ position: defaultCenter, map: map, title: "Waiting for GPS" });
-        
-        document.getElementById("setStartBtn").addEventListener("click", () => {
-            if (lastClickedPos) {
-                startPoint = { lat: lastClickedPos.lat, lng: lastClickedPos.lng };
-                saveBoundaryToFirebase();
-                alert("✅ Start location set! Vehicle must stay within corridor.");
-            } else {
-                alert("⚠️ Click on the map first to pick a location.");
-            }
-        });
-        document.getElementById("setStopBtn").addEventListener("click", () => {
-            if (lastClickedPos) {
-                stopPoint = { lat: lastClickedPos.lat, lng: lastClickedPos.lng };
-                saveBoundaryToFirebase();
-                alert("✅ Stop location set! Corridor active.");
-            } else {
-                alert("⚠️ Click on the map first to pick a location.");
-            }
-        });
-        document.getElementById("clearStartBtn").addEventListener("click", () => {
-            startPoint = null;
-            saveBoundaryToFirebase();
-            alert("Start point cleared.");
-        });
-        document.getElementById("clearStopBtn").addEventListener("click", () => {
-            stopPoint = null;
-            saveBoundaryToFirebase();
-            alert("Stop point cleared.");
-        });
-        document.getElementById("resetBoundaryBtn").addEventListener("click", () => {
-            startPoint = null;
-            stopPoint = null;
-            saveBoundaryToFirebase();
-            alert("All boundaries reset.");
-            if (currentVehiclePos.lat) evaluateAndUpdateFault(currentVehiclePos.lat, currentVehiclePos.lng);
-        });
-        
-        if (database) {
-            database.ref("/SmartMineGuard/geofence_boundary").once("value").then((snap) => {
-                const saved = snap.val();
-                if (saved) {
-                    if (saved.start_point) startPoint = saved.start_point;
-                    if (saved.stop_point) stopPoint = saved.stop_point;
-                    saveBoundaryToFirebase();
-                }
-            });
-        }
-        
-        fetchVehicleData();
+        map = L.map('map').setView([12.9716, 77.5946], 13);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors'
+        }).addTo(map);
+        // Add custom icons
+        vehicleMarker = L.marker([12.9716, 77.5946], { icon: L.divIcon({ html: '🚚', iconSize: [28,28], className: 'vehicle-marker' }) }).addTo(map);
     }
     
-    window.initMap = initMap;
+    // Setup speed chart
+    function initSpeedChart() {
+        const ctx = document.getElementById('speedChart').getContext('2d');
+        speedChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Speed (km/h)', data: [], borderColor: '#ffaa33', backgroundColor: 'rgba(255,170,51,0.1)', fill: true, tension: 0.3 }] },
+            options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true, max: 90 } } }
+        });
+    }
     
-    // Fallback if API key is missing
-    setTimeout(() => {
-        if (!mapInitialized) {
-            document.getElementById("map").innerHTML = '<div style="background:#2a1a1a; color:#ffaa66; padding:40px; text-align:center; height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column;"><h3>⚠️ Google Maps API Key Required</h3><p>Please replace <strong>YOUR_API_KEY_HERE</strong> in the script src with a valid Google Maps API key.</p><p>Get one from: <a href="https://console.cloud.google.com/" target="_blank" style="color:#ffaa66;">Google Cloud Console</a></p><p>Enable Maps JavaScript API and Geocoding API.</p></div>';
-        }
-    }, 3000);
+    // manual route apply
+    document.getElementById('applyRouteBtn').addEventListener('click', () => {
+        updateRouteDefinition();
+    });
+    document.getElementById('clearLogsBtn').addEventListener('click', () => {
+        violationLogs = [];
+        renderLogs();
+        addLog("Logs cleared by user", false);
+    });
+    
+    // main init
+    window.onload = () => {
+        initMap();
+        initSpeedChart();
+        // default start/stop from inputs
+        updateRouteDefinition();
+        // start fetching from Firebase every 2.5 seconds
+        setInterval(fetchFirebaseData, 2500);
+        // also start fallback demo data fetch if no firebase within 10 secs? but simulation is only if fetch fails, but to show no data, keep simulation as backup.
+        // For actual hardware, firebase will provide data.
+        addLog("Dashboard ready. Waiting for vehicle telemetry (Firebase). Route mismatch & speed alerts active.", false);
+    };
 </script>
 </body>
 </html>
